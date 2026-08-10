@@ -120,6 +120,17 @@ canvas {
   letter-spacing: 0.35em;
 }
 
+.loader-logo {
+  display: block;
+  width: min(80vw, 560px);
+  height: auto;
+  margin: 0 auto 18px;
+  border-radius: 22px;
+  box-shadow:
+    0 0 30px rgba(34, 211, 238, 0.25),
+    0 0 70px rgba(244, 114, 182, 0.18);
+}
+
 @keyframes loader-dot-pulse {
   0%,
   100% {

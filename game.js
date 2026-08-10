@@ -8,6 +8,24 @@
   const ctx = canvas.getContext("2d");
   const loader = document.getElementById("loader");
 
+  // Show JS errors on the loading screen (useful for mobile debugging)
+  window.addEventListener("error", (e) => {
+    const t = document.getElementById("loaderTitle");
+
+    if (t && loader && document.body.contains(loader)) {
+      t.textContent = "ERROR: " + (e.message || "unknown");
+    }
+  });
+
+  const logoImg = new Image();
+  let logoLoaded = false;
+
+  logoImg.onload = () => {
+    logoLoaded = true;
+  };
+
+  logoImg.src = "logo.png";
+
   const COLORS = [
     { name: "cyan", hex: "#22d3ee" },
     { name: "pink", hex: "#f472b6" },
@@ -502,7 +520,7 @@
         height: 26,
         colorIndex: Math.floor(Math.random() * COLORS.length),
         glow: 0
-          });
+      });
     }
 
     for (const wall of game.demoWalls) {
@@ -1104,52 +1122,86 @@
     const accentIndex = Math.floor(game.time * 1.5) % COLORS.length;
     const accent = COLORS[accentIndex].hex;
 
-    const titleSize = Math.min(38, W * 0.085, panelW * 0.11);
     const textSize = Math.min(18, W * 0.042, panelW * 0.045);
 
-    drawText(
-      "COLOR SWITCH BLAST",
-      centerX + 2,
-      panelY + panelH * 0.12 + 2,
-      titleSize,
-      hexToRgba(accent, 0.35),
-      "900"
-    );
+    const pos = logoLoaded
+      ? { i1: 0.46, i2: 0.55, i3: 0.64, best: 0.74, btn: 0.82 }
+      : { i1: 0.34, i2: 0.43, i3: 0.52, best: 0.64, btn: 0.78 };
 
-    drawText(
-      "COLOR SWITCH BLAST",
-      centerX,
-      panelY + panelH * 0.12,
-      titleSize,
-      "#ffffff",
-      "900"
-    );
-
-    const dotY = panelY + panelH * 0.21;
-
-    COLORS.forEach((c, i) => {
-      const active = i === accentIndex;
+    if (logoLoaded) {
+      const bannerX = panelX + 14;
+      const bannerY = panelY + 14;
+      const bannerW = panelW - 28;
+      const bannerH = panelH * 0.30;
 
       ctx.save();
-      ctx.globalAlpha = active ? 1 : 0.3;
+      roundRect(bannerX, bannerY, bannerW, bannerH, 18);
+      ctx.clip();
 
-      if (active) {
-        ctx.shadowBlur = 18;
-        ctx.shadowColor = c.hex;
-      }
+      const scale = Math.max(
+        bannerW / logoImg.width,
+        bannerH / logoImg.height
+      );
 
-      ctx.fillStyle = c.hex;
-      ctx.beginPath();
-      ctx.arc(centerX + (i - 1.5) * 34, dotY, active ? 8 : 5, 0, Math.PI * 2);
-      ctx.fill();
+      const dw = logoImg.width * scale;
+      const dh = logoImg.height * scale;
+
+      ctx.drawImage(
+        logoImg,
+        bannerX + (bannerW - dw) / 2,
+        bannerY + (bannerH - dh) / 2,
+        dw,
+        dh
+      );
 
       ctx.restore();
-    });
+    } else {
+      const titleSize = Math.min(38, W * 0.085, panelW * 0.11);
+
+      drawText(
+        "COLOR SWITCH BLAST",
+        centerX + 2,
+        panelY + panelH * 0.12 + 2,
+        titleSize,
+        hexToRgba(accent, 0.35),
+        "900"
+      );
+
+      drawText(
+        "COLOR SWITCH BLAST",
+        centerX,
+        panelY + panelH * 0.12,
+        titleSize,
+        "#ffffff",
+        "900"
+      );
+
+      const dotY = panelY + panelH * 0.21;
+
+      COLORS.forEach((c, i) => {
+        const active = i === accentIndex;
+
+        ctx.save();
+        ctx.globalAlpha = active ? 1 : 0.3;
+
+        if (active) {
+          ctx.shadowBlur = 18;
+          ctx.shadowColor = c.hex;
+        }
+
+        ctx.fillStyle = c.hex;
+        ctx.beginPath();
+        ctx.arc(centerX + (i - 1.5) * 34, dotY, active ? 8 : 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+      });
+    }
 
     drawText(
       "Tap, click, or press Space to switch color",
       centerX,
-      panelY + panelH * 0.34,
+      panelY + panelH * pos.i1,
       textSize,
       "rgba(255,255,255,0.78)",
       "600"
@@ -1158,7 +1210,7 @@
     drawText(
       "Match your ball color with the beam to pass",
       centerX,
-      panelY + panelH * 0.43,
+      panelY + panelH * pos.i2,
       textSize,
       "rgba(255,255,255,0.78)",
       "600"
@@ -1167,7 +1219,7 @@
     drawText(
       "Switch at the last moment for PERFECT bonus",
       centerX,
-      panelY + panelH * 0.52,
+      panelY + panelH * pos.i3,
       textSize,
       "rgba(255,255,255,0.78)",
       "600"
@@ -1176,7 +1228,7 @@
     drawText(
       `Best: ${game.best}`,
       centerX,
-      panelY + panelH * 0.64,
+      panelY + panelH * pos.best,
       textSize,
       "rgba(255,255,255,0.82)",
       "800"
@@ -1185,7 +1237,7 @@
     const buttonW = panelW * 0.72;
     const buttonH = 48;
     const buttonX = centerX - buttonW / 2;
-    const buttonY = panelY + panelH * 0.78;
+    const buttonY = panelY + panelH * pos.btn;
 
     const pulse = 0.72 + Math.sin(game.time * 5) * 0.28;
 
@@ -1470,7 +1522,6 @@
   });
 
   // YouTube Playables-style lifecycle placeholder.
-  // Later this can be connected to the official SDK/events if required.
   window.ColorSwitchBlast = {
     pause: pauseGame,
     resume: resumeGame,

@@ -20,7 +20,16 @@
 <body>
   <div id="loader" aria-hidden="true">
     <div class="loader-panel">
-      <div class="loader-title">COLOR SWITCH BLAST</div>
+      <img
+        id="loaderLogo"
+        class="loader-logo"
+        src="logo.png"
+        alt="Color Switch Blast"
+        onload="var t=document.getElementById('loaderTitle'); if(t){t.style.display='none';}"
+        onerror="this.remove();"
+      />
+
+      <div id="loaderTitle" class="loader-title">COLOR SWITCH BLAST</div>
 
       <div class="loader-dots">
         <span></span>
@@ -41,13 +50,6 @@
     ============================================================
     Paste the official YouTube Playables SDK script tag here
     if YouTube provides one in your developer dashboard/docs.
-
-    Example placeholder:
-
-    <script src="PASTE_OFFICIAL_SDK_URL_HERE"></script>
-
-    If YouTube gives you a full initialization snippet instead,
-    paste that full snippet here.
     ============================================================
   -->
 
