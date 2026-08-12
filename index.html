@@ -7,6 +7,10 @@
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
   />
   <meta name="theme-color" content="#050508" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'none'"
+  />
   <title>Color Switch Blast</title>
 
   <link
@@ -14,7 +18,7 @@
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23050508'/%3E%3Ccircle cx='32' cy='32' r='14' fill='%2322d3ee'/%3E%3Ccircle cx='68' cy='32' r='14' fill='%23f472b6'/%3E%3Ccircle cx='32' cy='68' r='14' fill='%23facc15'/%3E%3Ccircle cx='68' cy='68' r='14' fill='%234ade80'/%3E%3C/svg%3E"
   />
 
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=2" />
 </head>
 
 <body>
@@ -25,8 +29,6 @@
         class="loader-logo"
         src="logo.png"
         alt="Color Switch Blast"
-        onload="var t=document.getElementById('loaderTitle'); if(t){t.style.display='none';}"
-        onerror="this.remove();"
       />
 
       <div id="loaderTitle" class="loader-title">COLOR SWITCH BLAST</div>
@@ -53,7 +55,7 @@
     ============================================================
   -->
 
-  <script src="game.js" defer></script>
-  <script src="playables.js" defer></script>
+  <script src="game.js?v=2" defer></script>
+  <script src="playables.js?v=2" defer></script>
 </body>
 </html>

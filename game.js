@@ -8,7 +8,6 @@
   const ctx = canvas.getContext("2d");
   const loader = document.getElementById("loader");
 
-  // Show JS errors on the loading screen (useful for mobile debugging)
   window.addEventListener("error", (e) => {
     const t = document.getElementById("loaderTitle");
 
@@ -16,6 +15,19 @@
       t.textContent = "ERROR: " + (e.message || "unknown");
     }
   });
+
+  const loaderLogo = document.getElementById("loaderLogo");
+
+  if (loaderLogo) {
+    loaderLogo.addEventListener("load", () => {
+      const t = document.getElementById("loaderTitle");
+      if (t) t.style.display = "none";
+    });
+
+    loaderLogo.addEventListener("error", () => {
+      loaderLogo.remove();
+    });
+  }
 
   const logoImg = new Image();
   let logoLoaded = false;
@@ -33,9 +45,15 @@
     { name: "green", hex: "#4ade80" }
   ];
 
+  const MAX_SCORE = 9999;
+  const MAX_COUNTER = 1000000;
+  const SECRET = "csb-v3-integrity";
+  const GAME_VERSION = "v2.0";
+
   const STORAGE_KEYS = {
-    best: "color-switch-blast-best",
-    settings: "color-switch-blast-settings"
+    profile: "color-switch-blast-profile",
+    settings: "color-switch-blast-settings",
+    legacyBest: "color-switch-blast-best"
   };
 
   const storage = {
@@ -55,23 +73,93 @@
     }
   };
 
-  function loadSettings() {
-    const defaults = {
-      sound: true,
-      fx: true
-    };
+  function hashString(str) {
+    let h = 2166136261;
 
-    try {
-      const raw = storage.get(STORAGE_KEYS.settings);
-
-      if (raw) {
-        return Object.assign({}, defaults, JSON.parse(raw));
-      }
-    } catch {
-      // Ignore broken settings
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619);
     }
 
-    return defaults;
+    return (h >>> 0).toString(36);
+  }
+
+  function saveSecure(key, obj) {
+    const json = JSON.stringify(obj);
+    storage.set(key, json + "." + hashString(json + SECRET));
+  }
+
+  function loadSecure(key, defaults) {
+    const raw = storage.get(key);
+
+    if (!raw) {
+      return Object.assign({}, defaults);
+    }
+
+    const idx = raw.lastIndexOf(".");
+
+    if (idx === -1) {
+      return Object.assign({}, defaults);
+    }
+
+    const json = raw.slice(0, idx);
+    const hash = raw.slice(idx + 1);
+
+    if (hashString(json + SECRET) !== hash) {
+      return Object.assign({}, defaults);
+    }
+
+    try {
+      return Object.assign({}, defaults, JSON.parse(json));
+    } catch {
+      return Object.assign({}, defaults);
+    }
+  }
+
+  function clampNum(value, min, max, fallback) {
+    if (!Number.isFinite(value)) return fallback;
+    return Math.min(max, Math.max(min, value));
+  }
+
+  const profile = loadSecure(STORAGE_KEYS.profile, {
+    best: 0,
+    games: 0,
+    perfects: 0
+  });
+
+  profile.best = clampNum(profile.best, 0, MAX_SCORE, 0);
+  profile.games = clampNum(profile.games, 0, MAX_COUNTER, 0);
+  profile.perfects = clampNum(profile.perfects, 0, MAX_COUNTER, 0);
+
+  const legacyBest = clampNum(
+    Number(storage.get(STORAGE_KEYS.legacyBest) || 0),
+    0,
+    MAX_SCORE,
+    0
+  );
+
+  if (legacyBest > profile.best) {
+    profile.best = legacyBest;
+  }
+
+  const settings = loadSecure(STORAGE_KEYS.settings, {
+    sound: true,
+    fx: true
+  });
+
+  settings.sound = settings.sound !== false;
+  settings.fx = settings.fx !== false;
+
+  function saveProfile() {
+    saveSecure(STORAGE_KEYS.profile, {
+      best: profile.best,
+      games: profile.games,
+      perfects: profile.perfects
+    });
+  }
+
+  function saveSettings() {
+    saveSecure(STORAGE_KEYS.settings, settings);
   }
 
   let W = 0;
@@ -79,6 +167,8 @@
   let dpr = 1;
   let lastTime = performance.now();
   let audioCtx = null;
+  let fpsAvg = 0;
+  let lowPerfTimer = 0;
 
   let safeTop = 0;
   let safeRight = 0;
@@ -89,10 +179,11 @@
   let loaderTimeoutSet = false;
 
   const game = {
-    state: "menu", // menu, playing, paused, gameover
+    state: "menu", // menu, ready, playing, paused, gameover
     time: 0,
+    readyTimer: 0,
     score: 0,
-    best: Number(storage.get(STORAGE_KEYS.best) || 0),
+    best: profile.best,
     speed: 185,
     spawnTimer: 0.55,
     spawnInterval: 1.08,
@@ -110,11 +201,13 @@
     newBest: false,
     combo: 0,
     maxCombo: 0,
+    runPerfects: 0,
     lastSwitchAt: -10,
     perfectWindow: 0.18,
     demoSpawnTimer: 0,
     trailTimer: 0,
-    settings: loadSettings()
+    lowPerf: false,
+    settings
   };
 
   const ball = {
@@ -214,6 +307,18 @@
     ctx.closePath();
   }
 
+  function vibrate(pattern) {
+    if (!game.settings.fx) return;
+
+    try {
+      if (navigator.vibrate) {
+        navigator.vibrate(pattern);
+      }
+    } catch {
+      // Haptics not available
+    }
+  }
+
   function ensureAudio() {
     try {
       if (!audioCtx) {
@@ -228,7 +333,7 @@
     }
   }
 
-  function playTone(freq, duration = 0.08, type = "sine", volume = 0.03) {
+  function toneAt(freq, duration, type, volume, when) {
     if (!game.settings.sound) return;
 
     try {
@@ -238,20 +343,58 @@
 
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
+      const t0 = when || audioCtx.currentTime;
 
       osc.type = type;
       osc.frequency.value = freq;
 
-      gain.gain.setValueAtTime(volume, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+      gain.gain.setValueAtTime(volume, t0);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
 
       osc.connect(gain);
       gain.connect(audioCtx.destination);
 
-      osc.start();
-      osc.stop(audioCtx.currentTime + duration + 0.02);
+      osc.start(t0);
+      osc.stop(t0 + duration + 0.02);
     } catch {
       // Ignore audio errors
+    }
+  }
+
+  function playTone(freq, duration = 0.08, type = "sine", volume = 0.03) {
+    toneAt(freq, duration, type, volume, 0);
+  }
+
+  let musicTimer = null;
+  let musicStep = 0;
+
+  const MUSIC_SCALE = [220, 261.63, 293.66, 329.63, 392, 440];
+
+  function startMusic() {
+    if (musicTimer || !game.settings.sound) return;
+
+    ensureAudio();
+
+    musicTimer = setInterval(() => {
+      if (!audioCtx || game.state === "paused") return;
+
+      if (musicStep % 4 === 0) {
+        toneAt(MUSIC_SCALE[0] / 2, 0.4, "sine", 0.015, 0);
+      }
+
+      const note =
+        MUSIC_SCALE[(musicStep * 3 + (game.combo % 4)) % MUSIC_SCALE.length];
+
+      toneAt(note, 0.18, "triangle", 0.012, 0);
+
+      musicStep++;
+    }, 240);
+  }
+
+  function stopMusic() {
+    if (musicTimer) {
+      clearInterval(musicTimer);
+      musicTimer = null;
     }
   }
 
@@ -280,10 +423,6 @@
     playTone(110, 0.30, "sawtooth", 0.05);
   }
 
-  function saveSettings() {
-    storage.set(STORAGE_KEYS.settings, JSON.stringify(game.settings));
-  }
-
   function toggleSound() {
     game.settings.sound = !game.settings.sound;
     saveSettings();
@@ -291,6 +430,12 @@
     if (game.settings.sound) {
       ensureAudio();
       playClick();
+
+      if (game.state === "playing") {
+        startMusic();
+      }
+    } else {
+      stopMusic();
     }
   }
 
@@ -306,6 +451,10 @@
   }
 
   function addParticles(x, y, color, count, spread = 1, life = 0.7) {
+    if (game.lowPerf) {
+      count = Math.ceil(count / 2);
+    }
+
     if (!game.settings.fx) {
       count = Math.min(3, count);
       spread *= 0.4;
@@ -367,7 +516,8 @@
   }
 
   function startGame() {
-    game.state = "playing";
+    game.state = "ready";
+    game.readyTimer = 0.9;
     game.score = 0;
     game.speed = 185;
     game.spawnTimer = 0.55;
@@ -383,8 +533,10 @@
     game.newBest = false;
     game.combo = 0;
     game.maxCombo = 0;
+    game.runPerfects = 0;
     game.lastSwitchAt = -10;
     game.trailTimer = 0;
+    game.best = profile.best;
 
     ball.colorIndex = 0;
     ball.pulse = 0;
@@ -395,17 +547,21 @@
     game.state = "gameover";
     game.gameOverAt = performance.now();
 
+    stopMusic();
     addShake(18);
+    vibrate([40, 60, 40]);
 
     game.bgFlash = 0.22;
     game.bgFlashColor = "#ef4444";
 
-    game.newBest = game.score > game.best;
+    game.newBest = game.score > profile.best;
 
     if (game.newBest) {
-      game.best = game.score;
-      storage.set(STORAGE_KEYS.best, String(game.best));
+      profile.best = game.score;
+      game.best = profile.best;
     }
+
+    saveProfile();
 
     addParticles(ball.x, ball.y, COLORS[ball.colorIndex].hex, 46, 1.6, 1.1);
     playGameOver();
@@ -424,6 +580,11 @@
   function action() {
     if (game.state === "menu") {
       startGame();
+      return;
+    }
+
+    if (game.state === "ready") {
+      switchColor();
       return;
     }
 
@@ -559,6 +720,19 @@
       return;
     }
 
+    if (game.state === "ready") {
+      game.readyTimer -= dt;
+
+      if (game.readyTimer <= 0) {
+        game.state = "playing";
+        profile.games = Math.min(MAX_COUNTER, profile.games + 1);
+        startMusic();
+        vibrate(10);
+      }
+
+      return;
+    }
+
     if (game.state !== "playing") {
       return;
     }
@@ -608,18 +782,22 @@
           const comboBonus = Math.min(5, Math.floor(game.combo / 5));
           const points = 1 + (perfect ? 1 : 0) + comboBonus;
 
-          game.score += points;
+          game.score = Math.min(MAX_SCORE, game.score + points);
           game.combo += 1;
           game.maxCombo = Math.max(game.maxCombo, game.combo);
 
           wall.glow = 1;
 
           if (perfect) {
+            game.runPerfects += 1;
+            profile.perfects = Math.min(MAX_COUNTER, profile.perfects + 1);
+
             game.hitStop = game.settings.fx ? 0.045 : 0.02;
             game.bgFlash = 0.16;
             game.bgFlashColor = COLORS[wall.colorIndex].hex;
 
             addShake(5);
+            vibrate(15);
 
             addParticles(
               ball.x,
@@ -688,7 +866,7 @@
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
 
-    if (game.settings.fx) {
+    if (game.settings.fx && !game.lowPerf) {
       for (const orb of game.orbs) {
         const c = COLORS[orb.colorIndex];
 
@@ -762,7 +940,9 @@
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    ctx.shadowBlur = 22 + wall.glow * 30 + pulse * 16;
+    ctx.shadowBlur = game.lowPerf
+      ? 0
+      : 22 + wall.glow * 30 + pulse * 16;
     ctx.shadowColor = c.hex;
 
     ctx.fillStyle = hexToRgba(c.hex, 0.20 + wall.glow * 0.18 + pulse * 0.10);
@@ -901,7 +1081,11 @@
   }
 
   function drawHUD() {
-    if (game.state === "playing" || game.state === "paused") {
+    if (
+      game.state === "playing" ||
+      game.state === "paused" ||
+      game.state === "ready"
+    ) {
       const scoreY = safeTop + Math.max(78, H * 0.12);
 
       drawText(
@@ -940,6 +1124,19 @@
         Math.max(0, p.life / p.maxLife)
       );
     }
+  }
+
+  function drawReady() {
+    const pulse = 0.7 + Math.sin(performance.now() / 120) * 0.3;
+
+    drawText(
+      "GET READY",
+      W / 2,
+      H * 0.4,
+      Math.min(44, W * 0.09),
+      `rgba(255,255,255,${pulse})`,
+      "900"
+    );
   }
 
   function getPanelLayout(desiredHeight, maxWidth = 440) {
@@ -1119,7 +1316,7 @@
 
     drawPanel(panelX, panelY, panelW, panelH, 28);
 
-        const menuTime = Number.isFinite(game.time)
+    const menuTime = Number.isFinite(game.time)
       ? game.time
       : performance.now() / 1000;
 
@@ -1132,8 +1329,8 @@
     const textSize = Math.min(18, W * 0.042, panelW * 0.045);
 
     const pos = logoLoaded
-      ? { i1: 0.46, i2: 0.55, i3: 0.64, best: 0.74, btn: 0.82 }
-      : { i1: 0.34, i2: 0.43, i3: 0.52, best: 0.64, btn: 0.78 };
+      ? { i1: 0.46, i2: 0.55, i3: 0.64, best: 0.72, stats: 0.78, btn: 0.84 }
+      : { i1: 0.34, i2: 0.43, i3: 0.52, best: 0.62, stats: 0.70, btn: 0.78 };
 
     if (logoLoaded) {
       const bannerX = panelX + 14;
@@ -1241,8 +1438,19 @@
       "800"
     );
 
+    if (profile.games > 0) {
+      drawText(
+        `Games: ${profile.games}  •  Perfects: ${profile.perfects}`,
+        centerX,
+        panelY + panelH * pos.stats,
+        textSize * 0.85,
+        "rgba(255,255,255,0.55)",
+        "600"
+      );
+    }
+
     const buttonW = panelW * 0.72;
-    const buttonH = 48;
+    const buttonH = 46;
     const buttonX = centerX - buttonW / 2;
     const buttonY = panelY + panelH * pos.btn;
 
@@ -1272,10 +1480,21 @@
       `rgba(255,255,255,${pulse})`,
       "900"
     );
+
+    const footerY = Math.min(H - safeBottom - 14, panelY + panelH + 20);
+
+    drawText(
+      `VRX GAMES  •  ${GAME_VERSION}`,
+      centerX,
+      footerY,
+      Math.min(13, W * 0.032),
+      "rgba(255,255,255,0.45)",
+      "700"
+    );
   }
 
   function drawGameOver() {
-    const layout = getPanelLayout(Math.min(400, H * 0.60), 420);
+    const layout = getPanelLayout(Math.min(420, H * 0.64), 420);
 
     const panelW = layout.panelW;
     const panelH = layout.panelH;
@@ -1291,7 +1510,7 @@
     drawText(
       "GAME OVER",
       centerX,
-      panelY + panelH * 0.15,
+      panelY + panelH * 0.13,
       titleSize,
       "#ffffff",
       "900"
@@ -1301,7 +1520,7 @@
       drawText(
         "NEW BEST!",
         centerX,
-        panelY + panelH * 0.27,
+        panelY + panelH * 0.24,
         textSize * 0.8,
         "#facc15",
         "900"
@@ -1311,16 +1530,25 @@
     drawText(
       `Score: ${game.score}`,
       centerX,
-      panelY + panelH * 0.39,
+      panelY + panelH * 0.35,
       textSize,
       "rgba(255,255,255,0.92)",
       "800"
     );
 
     drawText(
+      `Perfects: ${game.runPerfects}`,
+      centerX,
+      panelY + panelH * 0.46,
+      textSize * 0.8,
+      "rgba(255,255,255,0.78)",
+      "800"
+    );
+
+    drawText(
       `Max Combo: ${game.maxCombo}`,
       centerX,
-      panelY + panelH * 0.50,
+      panelY + panelH * 0.55,
       textSize * 0.8,
       "rgba(250,204,21,0.82)",
       "800"
@@ -1329,16 +1557,16 @@
     drawText(
       `Best: ${game.best}`,
       centerX,
-      panelY + panelH * 0.61,
+      panelY + panelH * 0.64,
       textSize * 0.85,
       "rgba(255,255,255,0.75)",
       "700"
     );
 
     const buttonW = panelW * 0.72;
-    const buttonH = 48;
+    const buttonH = 46;
     const buttonX = centerX - buttonW / 2;
-    const buttonY = panelY + panelH * 0.78;
+    const buttonY = panelY + panelH * 0.80;
 
     const pulse = 0.72 + Math.sin(performance.now() / 300) * 0.28;
 
@@ -1431,6 +1659,10 @@
     drawHUD();
     drawPopups();
 
+    if (game.state === "ready") {
+      drawReady();
+    }
+
     if (game.state === "menu") {
       drawMenu();
     }
@@ -1449,15 +1681,32 @@
   }
 
   function frame(now) {
-    const dt = Math.min((now - lastTime) / 1000, 0.033);
+    const rawDt = (now - lastTime) / 1000;
+    const dt = Math.min(rawDt, 0.033);
     lastTime = now;
 
-      try {
+    if (rawDt > 0 && rawDt < 0.25 && game.state === "playing") {
+      const fps = 1 / rawDt;
+
+      fpsAvg = fpsAvg === 0 ? fps : fpsAvg * 0.95 + fps * 0.05;
+
+      if (!game.lowPerf && fpsAvg < 45) {
+        lowPerfTimer += rawDt;
+
+        if (lowPerfTimer > 2) {
+          game.lowPerf = true;
+        }
+      } else {
+        lowPerfTimer = 0;
+      }
+    }
+
+    try {
       update(dt);
       draw();
-  } catch (error) {
+    } catch (error) {
       console.error("Frame error:", error);
-  }
+    }
 
     if (!loaderHidden && !loaderTimeoutSet) {
       loaderTimeoutSet = true;
@@ -1532,7 +1781,6 @@
     e.preventDefault();
   });
 
-  // YouTube Playables-style lifecycle placeholder.
   window.ColorSwitchBlast = {
     pause: pauseGame,
     resume: resumeGame,
