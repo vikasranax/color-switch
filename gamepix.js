@@ -1,11 +1,15 @@
 (() => {
   const LOG = "[GamePixBridge]";
-  const AD_EVERY_GAMEOVERS = 3;
+  const AD_EVERY_GAMEOVERS = 2;
 
   let sdk = null;
+  let sdkReady = false;
   let adOpen = false;
   let gameovers = 0;
   let lastState = null;
+  let lastScore = -1;
+  let lastLevel = -1;
+  let lastComboBucket = 0;
 
   function log(...args) {
     console.log(LOG, ...args);
@@ -15,24 +19,23 @@
     return window.GamePix || window.gamepix || null;
   }
 
-  function call(names, payload, withPayload = false) {
+  function call(name, args = []) {
     if (!sdk) return undefined;
 
-    for (const name of names) {
-      const fn = sdk[name];
+    const fn = sdk[name];
 
-      if (typeof fn === "function") {
-        try {
-          const result = withPayload ? fn.call(sdk, payload) : fn.call(sdk);
-          log("Called SDK method: " + name);
-          return result;
-        } catch (error) {
-          console.warn(LOG, name + " failed", error);
-        }
-      }
+    if (typeof fn !== "function") {
+      return undefined;
     }
 
-    return undefined;
+    try {
+      const result = fn.apply(sdk, args);
+      log("Called GamePix." + name + "()");
+      return result;
+    } catch (error) {
+      console.warn(LOG, "GamePix." + name + " failed", error);
+      return undefined;
+    }
   }
 
   function pauseGame() {
@@ -43,7 +46,7 @@
     if (window.ColorSwitchBlast) window.ColorSwitchBlast.resume();
   }
 
-  function bindSdkEvents() {
+  function bindEvents() {
     const on = (name, handler) => {
       try {
         if (typeof sdk.addEventListener === "function") {
@@ -52,12 +55,24 @@
           sdk.on(name, handler);
         }
       } catch (error) {
-        // Unsupported event system
+        // Event system not supported
       }
     };
 
     on("pause", pauseGame);
     on("resume", resumeGame);
+  }
+
+  function sdkInitCalls() {
+    const lang = call("lang");
+
+    if (lang && typeof lang.then === "function") {
+      lang.then((l) => log("Player language:", l)).catch(() => {});
+    } else if (lang) {
+      log("Player language:", lang);
+    }
+
+    call("getItem", ["csb-best"]);
   }
 
   function showInterstitial() {
@@ -70,16 +85,12 @@
       adOpen = false;
     };
 
-    try {
-      const result = call(["presentAd", "showInterstitialAd", "interstitialAd"]);
+    const result = call("presentAd") || call("interstitialAd");
 
-      if (result && typeof result.then === "function") {
-        result.then(done).catch(done);
-      } else {
-        setTimeout(done, 100);
-      }
-    } catch (error) {
-      done();
+    if (result && typeof result.then === "function") {
+      result.then(done).catch(done);
+    } else {
+      setTimeout(done, 100);
     }
   }
 
@@ -95,30 +106,37 @@
         resolve(ok);
       };
 
-      try {
-        const result = call([
-          "presentRewardAd",
-          "showRewardAd",
-          "rewardAd"
-        ]);
+      const result = call("presentRewardAd") || call("rewardAd");
 
-        if (result && typeof result.then === "function") {
-          result
-            .then((res) => done(!!(res && (res.success || res.rewarded))))
-            .catch(() => done(false));
-        } else {
-          done(false);
-        }
-      } catch (error) {
+      if (result && typeof result.then === "function") {
+        result
+          .then((res) => done(!!(res && (res.success || res.rewarded))))
+          .catch(() => done(false));
+      } else {
         done(false);
       }
     });
   }
 
-  function onGameOver(state) {
-    call(["updateScore"], state.score, true);
+  function onScoreChange(score) {
+    call("updateScore", [score]);
 
+    const level = 1 + Math.floor(score / 10);
+
+    if (level !== lastLevel) {
+      lastLevel = level;
+      call("updateLevel", [level]);
+    }
+  }
+
+  function onGameOver(state) {
     gameovers += 1;
+
+    call("setItem", ["csb-best", String(state.best)]);
+
+    if (state.score > 0 && state.score === state.best) {
+      call("happyMoment");
+    }
 
     if (gameovers % AD_EVERY_GAMEOVERS === 0) {
       setTimeout(showInterstitial, 600);
@@ -133,7 +151,32 @@
 
       const state = api.getState();
 
-      if (!state || state.state === lastState) return;
+      if (!state) return;
+
+      if (state.state === "playing") {
+        if (state.score !== lastScore) {
+          lastScore = state.score;
+
+          if (sdk) onScoreChange(state.score);
+        }
+
+        const bucket = Math.floor(state.combo / 5);
+
+        if (bucket > lastComboBucket) {
+          lastComboBucket = bucket;
+
+          if (sdk) call("happyMoment");
+        }
+      } else {
+        lastComboBucket = 0;
+
+        if (state.state === "menu") {
+          lastScore = -1;
+          lastLevel = -1;
+        }
+      }
+
+      if (state.state === lastState) return;
 
       const prev = lastState;
       lastState = state.state;
@@ -143,11 +186,11 @@
       if (!sdk) return;
 
       if (state.state === "paused") {
-        call(["pause"]);
+        call("pause");
       }
 
       if (state.state === "playing" && prev === "paused") {
-        call(["resume"]);
+        call("resume");
       }
 
       if (state.state === "gameover") {
@@ -157,13 +200,34 @@
   }
 
   function init() {
-    sdk = detectSdk();
+    const tryDetect = () => {
+      sdk = detectSdk();
 
-    if (sdk) {
-      log("GamePix SDK detected");
-      bindSdkEvents();
-    } else {
-      log("GamePix SDK not detected. Running in test mode (normal outside GamePix).");
+      if (sdk && !sdkReady) {
+        sdkReady = true;
+        log("GamePix SDK detected");
+        bindEvents();
+        sdkInitCalls();
+      }
+    };
+
+    tryDetect();
+
+    if (!sdk) {
+      let tries = 0;
+
+      const t = setInterval(() => {
+        tries += 1;
+        tryDetect();
+
+        if (sdk || tries > 20) {
+          clearInterval(t);
+
+          if (!sdk) {
+            log("GamePix SDK not detected. Running in test mode.");
+          }
+        }
+      }, 250);
     }
 
     startWatcher();
