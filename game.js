@@ -1119,8 +1119,15 @@
 
     drawPanel(panelX, panelY, panelW, panelH, 28);
 
-    const accentIndex = Math.floor(game.time * 1.5) % COLORS.length;
-    const accent = COLORS[accentIndex].hex;
+        const menuTime = Number.isFinite(game.time)
+      ? game.time
+      : performance.now() / 1000;
+
+    const accentIndex =
+      ((Math.floor(menuTime * 1.5) % COLORS.length) + COLORS.length) %
+      COLORS.length;
+
+    const accent = (COLORS[accentIndex] || COLORS[0]).hex;
 
     const textSize = Math.min(18, W * 0.042, panelW * 0.045);
 
@@ -1239,7 +1246,7 @@
     const buttonX = centerX - buttonW / 2;
     const buttonY = panelY + panelH * pos.btn;
 
-    const pulse = 0.72 + Math.sin(game.time * 5) * 0.28;
+    const pulse = 0.72 + Math.sin(menuTime * 5) * 0.28;
 
     ctx.save();
 
@@ -1445,8 +1452,12 @@
     const dt = Math.min((now - lastTime) / 1000, 0.033);
     lastTime = now;
 
-    update(dt);
-    draw();
+      try {
+      update(dt);
+      draw();
+  } catch (error) {
+      console.error("Frame error:", error);
+  }
 
     if (!loaderHidden && !loaderTimeoutSet) {
       loaderTimeoutSet = true;
