@@ -1,19 +1,20 @@
 (() => {
   const LOG = "[PlaygamaBridge]";
-  const AD_MIN_INTERVAL = 45000;
+  const LEADERBOARD_ID = "best-score";
 
   let ready = false;
   let active = false;
-  let adBusy = false;
-  let lastAdAt = 0;
   let lastState = null;
-  let interstitialFn = null;
-  let rewardedFn = null;
 
-  const LEADERBOARD_ID = "best-score";
+  let bridgeReady = false;
+  let gameReady = false;
+  let gameReadySent = false;
 
   let setScoreFn = null;
   let showBoardFn = null;
+
+  let rewardedResolver = null;
+  let rewardedGot = false;
 
   function log(...args) {
     console.log(LOG, ...args);
@@ -26,7 +27,7 @@
   function platformId() {
     try {
       const p = window.bridge && window.bridge.platform;
-      return (p && (p.id || p.platformId)) || (window.bridge && window.bridge.platformId) || "";
+      return (p && p.id) || "";
     } catch {
       return "";
     }
@@ -40,175 +41,98 @@
     if (window.ColorSwitchBlast) window.ColorSwitchBlast.resume();
   }
 
-  function deepFindObject(root, keyword, depth, seen) {
-    depth = depth || 0;
-    seen = seen || new WeakSet();
-    if (!root || typeof root !== "object" || depth > 3 || seen.has(root)) return null;
-    seen.add(root);
-
-    let keys = [];
-    try { keys = Object.keys(root); } catch { return null; }
-
-    for (const key of keys) {
-      let val = null;
-      try { val = root[key]; } catch { continue; }
-      if (val && typeof val === "object" && key.toLowerCase().includes(keyword)) return val;
+  function setMuted(m) {
+    if (window.ColorSwitchBlast && window.ColorSwitchBlast.setMuted) {
+      window.ColorSwitchBlast.setMuted(m);
     }
-
-    for (const key of keys) {
-      let val = null;
-      try { val = root[key]; } catch { continue; }
-      if (val && typeof val === "object") {
-        const found = deepFindObject(val, keyword, depth + 1, seen);
-        if (found) return found;
-      }
-    }
-    return null;
   }
 
-  function deepFindFn(root, keyword, depth, seen) {
-    depth = depth || 0;
-    seen = seen || new WeakSet();
-    if (!root || typeof root !== "object" || depth > 3 || seen.has(root)) return null;
-    seen.add(root);
-
-    let keys = [];
-    try { keys = Object.keys(root); } catch { return null; }
-
-    for (const key of keys) {
-      let val = null;
-      try { val = root[key]; } catch { continue; }
-      if (typeof val === "function" && key.toLowerCase().includes(keyword)) return val.bind(root);
-    }
-
-    for (const key of keys) {
-      let val = null;
-      try { val = root[key]; } catch { continue; }
-      if (val && typeof val === "object") {
-        const found = deepFindFn(val, keyword, depth + 1, seen);
-        if (found) return found;
-      }
-    }
-    return null;
+  function eventName(key, fallback) {
+    const EN = (window.bridge && window.bridge.EVENT_NAME) || {};
+    return EN[key] || fallback;
   }
 
-  function findAdFn(keyword) {
+  function sendGameReady() {
+    if (gameReadySent) return;
+    gameReadySent = true;
+
+    try {
+      const p = window.bridge && window.bridge.platform;
+
+      if (p && typeof p.sendMessage === "function") {
+        p.sendMessage("game_ready");
+        log("game_ready sent");
+      }
+    } catch (e) {
+      log("game_ready failed", e);
+    }
+  }
+
+  function checkReady() {
+    if (bridgeReady && gameReady) sendGameReady();
+  }
+
+  function subscribe() {
     const b = window.bridge;
-    if (!b) return null;
+    const p = b.platform;
+    const a = b.advertisement;
 
-    const obj = deepFindObject(b, keyword);
-
-    if (obj) {
-      for (const name of ["show", "display", "play", "start"]) {
-        if (typeof obj[name] === "function") return obj[name].bind(obj);
-      }
-
-      for (const key of Object.keys(obj)) {
-        if (typeof obj[key] === "function") return obj[key].bind(obj);
-      }
-    }
-
-    return deepFindFn(b, keyword);
-  }
-
-  function subscribeEvents() {
-    const p = window.bridge && window.bridge.platform;
-    if (!p) return;
-
-    const on =
-      (typeof p.on === "function" && p.on.bind(p)) ||
-      (typeof p.addEventListener === "function" && p.addEventListener.bind(p)) ||
-      (typeof p.subscribe === "function" && p.subscribe.bind(p)) ||
-      null;
-
-    if (!on) return;
-
-    const tryOn = (name, handler) => {
-      try { on(name, handler); } catch {}
-    };
-
-    tryOn("pause", pauseGame);
-    tryOn("resume", resumeGame);
-    tryOn("audio", (muted) => { if (muted) pauseGame(); });
-    tryOn("audioStateChanged", (muted) => { if (muted) pauseGame(); });
-  }
-
-  function mirrorSave(state) {
-    try {
-      const s = window.bridge && window.bridge.storage;
-      if (!s) return;
-
-      const set = s.set || s.setItem;
-
-      if (typeof set === "function") {
-        set.call(s, "csb-best", String(state.best));
-      }
-    } catch {}
-  }
-
-  function showInterstitial() {
-    if (!ready || !active || adBusy) return;
-
-    const now = Date.now();
-    if (lastAdAt && now - lastAdAt < AD_MIN_INTERVAL) return;
-    if (!interstitialFn) return;
-
-    adBusy = true;
-    lastAdAt = now;
-    pauseGame();
-
-    try {
-      const res = interstitialFn();
-
-      if (res && typeof res.then === "function") {
-        res.then(() => { adBusy = false; }).catch(() => { adBusy = false; });
-      } else {
-        adBusy = false;
-      }
-    } catch {
-      adBusy = false;
-    }
-  }
-
-  function showRewardAd() {
-    if (!ready || !active || adBusy) return Promise.resolve(false);
-    if (!rewardedFn) return Promise.resolve(false);
-
-    adBusy = true;
-    pauseGame();
-
-    return new Promise((resolve) => {
-      let rewarded = false;
-      let settled = false;
-
-      const done = (ok) => {
-        if (settled) return;
-        settled = true;
-        adBusy = false;
-        resolve(ok);
-      };
-
-      setTimeout(() => done(false), 10000); // safety
-
+    // REQUIRED: universal pause + audio handlers
+    if (p && typeof p.on === "function") {
       try {
-        const res = rewardedFn({
-          onRewarded: () => { rewarded = true; },
-          onSuccess: () => { rewarded = true; },
-          onClose: () => done(rewarded),
-          onClosed: () => done(rewarded)
+        p.on(eventName("PAUSE_STATE_CHANGED", "pause_state_changed"), (isPaused) => {
+          log("pause_state_changed:", isPaused);
+          if (isPaused) pauseGame();
+          else resumeGame();
         });
 
-        if (res && typeof res.then === "function") {
-          res
-            .then((r) => done(rewarded || !!(r && (r.success || r.rewarded))))
-            .catch(() => done(false));
-        }
-      } catch {
-        done(false);
+        p.on(eventName("AUDIO_STATE_CHANGED", "audio_state_changed"), (isEnabled) => {
+          log("audio_state_changed:", isEnabled);
+          setMuted(!isEnabled);
+        });
+      } catch (e) {
+        log("platform events failed", e);
       }
-    });
+    }
+
+    // Rewarded ad lifecycle (early-close + completion tests)
+    if (a && typeof a.on === "function") {
+      try {
+        a.on(eventName("REWARDED_STATE_CHANGED", "rewarded_state_changed"), (state) => {
+          log("rewarded state:", state);
+
+          if (state === "rewarded") rewardedGot = true;
+
+          if (state === "closed" || state === "failed") {
+            if (rewardedResolver) {
+              const r = rewardedResolver;
+              rewardedResolver = null;
+              r(rewardedGot);
+            }
+          }
+        });
+
+        a.on(eventName("INTERSTITIAL_STATE_CHANGED", "interstitial_state_changed"), (state) => {
+          log("interstitial state:", state);
+        });
+      } catch (e) {
+        log("ad events failed", e);
+      }
+    }
   }
-  
+
+  function findLeaderboard() {
+    const b = window.bridge;
+    const lb = (b && (b.leaderboards || b.leaderboard)) || null;
+    if (!lb) return;
+
+    if (typeof lb.setScore === "function") setScoreFn = lb.setScore.bind(lb);
+    else if (typeof lb.submitScore === "function") setScoreFn = lb.submitScore.bind(lb);
+    else if (typeof lb.submit === "function") setScoreFn = lb.submit.bind(lb);
+
+    if (typeof lb.show === "function") showBoardFn = lb.show.bind(lb);
+  }
+
   function leaderboardEnabled() {
     return ready && active && !!LEADERBOARD_ID && !!(setScoreFn || showBoardFn);
   }
@@ -237,6 +161,66 @@
     }
   }
 
+  function mirrorSave(state) {
+    try {
+      const s = window.bridge && window.bridge.storage;
+      if (!s) return;
+
+      const set = s.set || s.setItem;
+      if (typeof set === "function") set.call(s, "csb-best", String(state.best));
+    } catch {}
+  }
+
+  function showInterstitial() {
+    if (!ready || !active) return;
+
+    const a = window.bridge && window.bridge.advertisement;
+    if (!a || typeof a.showInterstitial !== "function") return;
+
+    pauseGame();
+
+    try {
+      a.showInterstitial("game_over");
+      log("showInterstitial called");
+    } catch (e) {
+      log("interstitial failed", e);
+    }
+  }
+
+  function showRewardAd() {
+    if (!ready || !active) return Promise.resolve(false);
+
+    const a = window.bridge && window.bridge.advertisement;
+    if (!a || typeof a.showRewarded !== "function") return Promise.resolve(false);
+
+    pauseGame();
+    rewardedGot = false;
+
+    return new Promise((resolve) => {
+      rewardedResolver = resolve;
+
+      // safety: never hang the revive flow
+      setTimeout(() => {
+        if (rewardedResolver) {
+          const r = rewardedResolver;
+          rewardedResolver = null;
+          r(false);
+        }
+      }, 15000);
+
+      try {
+        a.showRewarded("revive");
+        log("showRewarded called");
+      } catch (e) {
+        if (rewardedResolver) {
+          const r = rewardedResolver;
+          rewardedResolver = null;
+          r(false);
+        }
+      }
+    });
+  }
+
   function startWatcher() {
     setInterval(() => {
       const api = window.ColorSwitchBlast;
@@ -248,7 +232,7 @@
       lastState = state.state;
       log("State changed:", state.state);
 
-        if (state.state === "gameover") {
+      if (state.state === "gameover") {
         mirrorSave(state);
         submitScore(state.score);
         setTimeout(showInterstitial, 600);
@@ -273,41 +257,37 @@
         log("Bridge initialized. platform:", id || "unknown", active ? "(live)" : "(mock)");
 
         try {
-          log("language:", window.bridge.platform && window.bridge.platform.language);
+          const p = window.bridge.platform;
+          if (p && p.isAudioEnabled === false) setMuted(true);
         } catch {}
 
-        interstitialFn = findAdFn("interstitial");
-        rewardedFn = findAdFn("rewarded");
+        subscribe();
+        findLeaderboard();
 
-        const boardObj = deepFindObject(window.bridge, "leaderboard");
-
-        if (boardObj) {
-          setScoreFn =
-            (typeof boardObj.setScore === "function" && boardObj.setScore.bind(boardObj)) ||
-            (typeof boardObj.submitScore === "function" && boardObj.submitScore.bind(boardObj)) ||
-            (typeof boardObj.submit === "function" && boardObj.submit.bind(boardObj)) ||
-            null;
-
-          showBoardFn = (typeof boardObj.show === "function" && boardObj.show.bind(boardObj)) || null;
-        }
-
-        subscribeEvents();
+        bridgeReady = true;
+        checkReady();
       }).catch((e) => {
         ready = true;
+        bridgeReady = true;
+        checkReady();
         log("initialize error", e);
       });
     } catch {
       ready = true;
+      bridgeReady = true;
+      checkReady();
     }
 
     window.addEventListener("color-switch-blast:ready", () => {
-      try {
-        const p = window.bridge && window.bridge.platform;
-        if (p && typeof p.sendMessage === "function") {
-          p.sendMessage("game_ready");
-        }
-      } catch {}
+      gameReady = true;
+      checkReady();
     });
+
+    // failsafe
+    setTimeout(() => {
+      gameReady = true;
+      checkReady();
+    }, 4000);
 
     startWatcher();
   }
