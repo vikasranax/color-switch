@@ -24,7 +24,14 @@
   const logoImg = new Image();
   let logoLoaded = false;
   logoImg.onload = () => { logoLoaded = true; };
-  logoImg.src = "logo.png";
+  logoImg.src = "logo.png?v=3.2";
+
+  try {
+    if (document.fonts && document.fonts.load) {
+      document.fonts.load('800 20px "JetBrains Mono"');
+      document.fonts.load('600 14px "JetBrains Mono"');
+    }
+  } catch {}
 
   const COLORS = [
     { name: "cyan", hex: "#22d3ee" },
@@ -713,7 +720,7 @@
     ctx.fillStyle = "rgba(7, 10, 18, 0.55)";
     roundRect(x, y, w, h, r);
     ctx.fill();
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.10)";
+    ctx.strokeStyle = "rgba(0, 255, 255, 0.18)";
     ctx.lineWidth = 2;
     roundRect(x, y, w, h, r);
     ctx.stroke();
@@ -883,11 +890,24 @@
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.fillStyle = color;
-    ctx.font = `${weight} ${size}px Arial, sans-serif`;
+    ctx.font = `${weight} ${size}px "JetBrains Mono", ui-monospace, Consolas, monospace`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, x, y);
     ctx.restore();
+  }
+
+  function fitSize(text, maxWidth, baseSize, weight = "600") {
+    let size = baseSize;
+
+    while (size > 9) {
+      ctx.font = `${weight} ${size}px "JetBrains Mono", ui-monospace, Consolas, monospace`;
+
+      if (ctx.measureText(text).width <= maxWidth) break;
+      size -= 1;
+    }
+
+    return size;
   }
 
   function drawHUD() {
@@ -1003,7 +1023,7 @@
     for (const b of getButtons()) {
       ctx.save();
       ctx.fillStyle = "rgba(255,255,255,0.08)";
-      ctx.strokeStyle = "rgba(255,255,255,0.16)";
+      ctx.strokeStyle = "rgba(0,255,255,0.25)";
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
       ctx.fill(); ctx.stroke();
@@ -1053,7 +1073,7 @@
       ctx.drawImage(logoImg, bx + (bw - dw) / 2, by + (bh - dh) / 2, dw, dh);
       ctx.restore();
     } else {
-      const titleSize = Math.min(38, W * 0.085, panelW * 0.11);
+      const titleSize = fitSize("COLOR SWITCH BLAST", panelW - 24, Math.min(38, W * 0.085), "900");
       drawText("COLOR SWITCH BLAST", centerX + 2, panelY + panelH * 0.12 + 2, titleSize, hexToRgba(accent, 0.35), "900");
       drawText("COLOR SWITCH BLAST", centerX, panelY + panelH * 0.12, titleSize, "#ffffff", "900");
       const dotY = panelY + panelH * 0.21;
@@ -1070,13 +1090,29 @@
       });
     }
 
-    drawText("Tap, click, or press Space to switch color", centerX, panelY + panelH * pos.i1, textSize, "rgba(255,255,255,0.78)", "600");
-    drawText("Match your ball color with the beam to pass", centerX, panelY + panelH * pos.i2, textSize, "rgba(255,255,255,0.78)", "600");
-    drawText("Catch power-ups • Last-moment switch = PERFECT", centerX, panelY + panelH * pos.i3, textSize, "rgba(255,255,255,0.78)", "600");
-    drawText(`Best: ${game.best}`, centerX, panelY + panelH * pos.best, textSize, "rgba(255,255,255,0.82)", "800");
+    const lines = [
+      "Tap / click / Space = switch color",
+      "Match ball color with beam to pass",
+      "Power-ups • last-moment = PERFECT"
+    ];
+
+    const maxTextW = panelW - 32;
+
+    let instrSize = textSize;
+    for (const line of lines) {
+      instrSize = Math.min(instrSize, fitSize(line, maxTextW, textSize, "600"));
+    }
+
+    drawText(lines[0], centerX, panelY + panelH * pos.i1, instrSize, "rgba(255,255,255,0.78)", "600");
+    drawText(lines[1], centerX, panelY + panelH * pos.i2, instrSize, "rgba(255,255,255,0.78)", "600");
+    drawText(lines[2], centerX, panelY + panelH * pos.i3, instrSize, "rgba(255,255,255,0.78)", "600");
+
+    const bestLine = `Best: ${game.best}`;
+    drawText(bestLine, centerX, panelY + panelH * pos.best, fitSize(bestLine, maxTextW, textSize, "800"), "rgba(255,255,255,0.82)", "800");
 
     if (profile.games > 0) {
-      drawText(`Games: ${profile.games}  •  Perfects: ${profile.perfects}`, centerX, panelY + panelH * pos.stats, textSize * 0.85, "rgba(255,255,255,0.55)", "600");
+      const statsLine = `Games: ${profile.games} • Perfects: ${profile.perfects}`;
+      drawText(statsLine, centerX, panelY + panelH * pos.stats, fitSize(statsLine, maxTextW, textSize * 0.85, "600"), "rgba(255,255,255,0.55)", "600");
     }
 
     const buttonW = panelW * 0.72;
@@ -1087,7 +1123,7 @@
     drawRectButton({ x: centerX - buttonW / 2, y: buttonY, w: buttonW, h: buttonH }, "TAP TO START", accent, pulse);
 
     const footerY = Math.min(H - safeBottom - 14, panelY + panelH + 20);
-    drawText(`VRX GAMES  •  ${GAME_VERSION}`, centerX, footerY, Math.min(13, W * 0.032), "rgba(255,255,255,0.45)", "700");
+    drawText(`VRX GAMES  •  ${GAME_VERSION}`, centerX, footerY, Math.min(13, W * 0.032), "rgba(0,255,255,0.55)", "700");
   }
 
   function drawRevive() {
