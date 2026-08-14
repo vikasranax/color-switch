@@ -423,7 +423,9 @@
   function declineRevive() { gameOver(); }
 
   function tryRevive() {
-    const bridge = window.GamePixBridge;
+    const bridge = window.PlaygamaBridge && window.PlaygamaBridge.adsAvailable
+      ? window.PlaygamaBridge
+      : window.GamePixBridge;
     if (bridge && bridge.adsAvailable) {
       bridge.showRewardAd().then((ok) => { if (ok) doRevive(); else declineRevive(); });
     } else {
@@ -962,8 +964,21 @@
     if (game.state === "playing") {
       buttons.push({ id: "pause", x: W - safeRight - 34, y: topY, r, action: pauseGame });
     }
-    if (game.state === "paused") {
+     if (game.state === "paused") {
       buttons.push({ id: "resume", x: W - safeRight - 34, y: topY, r, action: resumeGame });
+    }
+    if (
+      (game.state === "menu" || game.state === "gameover") &&
+      window.PlaygamaBridge &&
+      window.PlaygamaBridge.hasLeaderboard
+    ) {
+      buttons.push({
+        id: "board",
+        x: W - safeRight - 34,
+        y: topY,
+        r,
+        action: () => { if (window.PlaygamaBridge) window.PlaygamaBridge.showLeaderboard(); }
+      });
     }
     return buttons;
   }
@@ -1008,6 +1023,13 @@
       ctx.fillStyle = "rgba(255,255,255,0.9)";
       ctx.fillRect(-6, -7, 4, 14);
       ctx.fillRect(2, -7, 4, 14);
+    }
+
+    if (b.id === "board") {
+      ctx.fillStyle = "rgba(250,204,21,0.95)";
+      ctx.fillRect(-8, -1, 4, 8);
+      ctx.fillRect(-2, -7, 4, 14);
+      ctx.fillRect(4, 1, 4, 6);
     }
 
     if (b.id === "resume") {
@@ -1139,7 +1161,7 @@
     drawText("CONTINUE?", centerX, panelY + panelH * 0.16, Math.min(38, W * 0.08), "#ffffff", "900");
     drawText(`Score: ${game.score}`, centerX, panelY + panelH * 0.32, Math.min(22, W * 0.05), "rgba(255,255,255,0.85)", "800");
 
-    const useAd = !!(window.GamePixBridge && window.GamePixBridge.adsAvailable);
+    const useAd = !!((window.PlaygamaBridge && window.PlaygamaBridge.adsAvailable) || (window.GamePixBridge && window.GamePixBridge.adsAvailable));
     const bw = panelW * 0.72;
 
     const adRect = { x: centerX - bw / 2, y: panelY + panelH * 0.46, w: bw, h: 46 };
