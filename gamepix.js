@@ -1,13 +1,11 @@
 (() => {
   const LOG = "[GamePixBridge]";
 
-  const AD_MIN_INTERVAL = 60000; // max 1 interstitial per 60 seconds
-  const AD_EVERY_DEATHS = 2;     // interstitial every 2 deaths (limited)
+  const AD_MIN_INTERVAL = 45000; // throttle after the first ad
 
   let sdkReady = false;
   let adBusy = false;
   let lastAdAt = 0;
-  let deaths = 0;
   let lastState = null;
   let lastScore = -1;
   let lastLevel = -1;
@@ -19,6 +17,14 @@
 
   function hasSdk() {
     return typeof window.GamePix !== "undefined" && !!window.GamePix;
+  }
+
+  function inPlatform() {
+    try {
+      return window.self !== window.top;
+    } catch (error) {
+      return true;
+    }
   }
 
   function safe(fn) {
@@ -97,11 +103,11 @@
   }
 
   function showInterstitial() {
-    if (!sdkReady || adBusy) return;
+    if (!sdkReady || adBusy || !inPlatform()) return;
 
     const now = Date.now();
 
-    if (now - lastAdAt < AD_MIN_INTERVAL) return;
+    if (lastAdAt && now - lastAdAt < AD_MIN_INTERVAL) return;
 
     adBusy = true;
     lastAdAt = now;
@@ -125,7 +131,7 @@
   }
 
   function showRewardAd() {
-    if (!sdkReady || adBusy) return Promise.resolve(false);
+    if (!sdkReady || adBusy || !inPlatform()) return Promise.resolve(false);
 
     adBusy = true;
     pauseGame();
@@ -151,18 +157,14 @@
   }
 
   function onGameOver(state) {
-    deaths += 1;
-
     mirrorSave(state.best);
 
     if (state.score > 0 && state.score === state.best) {
       happyMoment();
     }
 
-    // Interstitial ONLY on death, never before menu, frequency limited
-    if (deaths % AD_EVERY_DEATHS === 0) {
-      setTimeout(showInterstitial, 600);
-    }
+    // Interstitial ONLY on death, never before menu, throttled
+    setTimeout(showInterstitial, 600);
   }
 
   function bindPlatformEvents() {
@@ -253,6 +255,9 @@
     showRewardAd,
     get sdkReady() {
       return sdkReady;
+    },
+    get adsAvailable() {
+      return sdkReady && inPlatform();
     }
   };
 
