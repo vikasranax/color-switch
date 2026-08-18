@@ -20,7 +20,7 @@
   const logoImg = new Image();
   let logoLoaded = false;
   logoImg.onload = () => { logoLoaded = true; };
-  logoImg.src = "logo.png?v=4.1";
+  logoImg.src = "logo.png?v=4.2";
   try { if (document.fonts && document.fonts.load) { document.fonts.load('800 20px "JetBrains Mono"'); document.fonts.load('600 14px "JetBrains Mono"'); } } catch {}
 
   const COLORS = [
@@ -40,18 +40,18 @@
     { id: "double", color: "#fb923c", label: "DOUBLE POINTS" }
   ];
   const ACHIEVEMENTS = [
-    { id: "first_run", name: "FIRST CONTACT", icon: "▶" },
-    { id: "score_25", name: "WARMING UP", icon: "★" },
-    { id: "score_50", name: "HALF CENTURY", icon: "★" },
-    { id: "score_100", name: "CENTURION", icon: "♛" },
-    { id: "perfect_10", name: "PERFECTIONIST", icon: "◆" },
-    { id: "combo_10", name: "CHAIN REACTION", icon: "⚡" },
-    { id: "all_modes", name: "EXPLORER", icon: "◈" },
-    { id: "shield_save", name: "GUARDIAN", icon: "▣" },
-    { id: "revive_used", name: "SECOND WIND", icon: "✚" },
-    { id: "time_50", name: "CLOCK MASTER", icon: "⏱" },
-    { id: "zen_50", name: "INNER PEACE", icon: "☯" },
-    { id: "hard_50", name: "NO MERCY", icon: "☠" }
+    { id: "first_run", name: "FIRST CONTACT", desc: "Play your first run", icon: "▶" },
+    { id: "score_25", name: "WARMING UP", desc: "Score 25 in one run", icon: "★" },
+    { id: "score_50", name: "HALF CENTURY", desc: "Score 50 in one run", icon: "★" },
+    { id: "score_100", name: "CENTURION", desc: "Score 100 in one run", icon: "♛" },
+    { id: "perfect_10", name: "PERFECTIONIST", desc: "10 total perfects", icon: "◆" },
+    { id: "combo_10", name: "CHAIN REACTION", desc: "Reach 10 combo", icon: "⚡" },
+    { id: "all_modes", name: "EXPLORER", desc: "Play all 4 modes", icon: "◈" },
+    { id: "shield_save", name: "GUARDIAN", desc: "Save yourself with a shield", icon: "▣" },
+    { id: "revive_used", name: "SECOND WIND", desc: "Use a revive", icon: "✚" },
+    { id: "time_50", name: "CLOCK MASTER", desc: "Score 50 in Time Attack", icon: "⏱" },
+    { id: "zen_50", name: "INNER PEACE", desc: "Score 50 in Zen", icon: "☯" },
+    { id: "hard_50", name: "NO MERCY", desc: "Score 50 in Hardcore", icon: "☠" }
   ];
   const SETTINGS_ROWS = [
     { id: "colorblind", label: "COLORBLIND SYMBOLS" },
@@ -65,7 +65,7 @@
   const MILESTONES = [25, 50, 100, 150, 200, 300];
   const MAX_SCORE = 9999, MAX_COUNTER = 1000000;
   const SECRET = "csb-v4-integrity";
-  const GAME_VERSION = "v4.1";
+  const GAME_VERSION = "v4.2";
   const STORAGE_KEYS = { profile: "color-switch-blast-profile", settings: "color-switch-blast-settings", legacyBest: "color-switch-blast-best" };
 
   const storage = {
@@ -110,7 +110,7 @@
     shake: 0, hitStop: 0, bgFlash: 0, bgFlashColor: "#ffffff",
     gameOverAt: 0, newBest: false, combo: 0, maxCombo: 0, runPerfects: 0,
     lastSwitchAt: -10, perfectWindow: 0.18, demoSpawnTimer: 0, trailTimer: 0,
-    lowPerf: false, uiRects: {}, settings
+    lowPerf: false, uiRects: {}, achPage: 0, settings
   };
   const ball = { colorIndex: 0, radius: 17, pulse: 0, switchFlash: 0, get x() { return W / 2; }, get y() { return H * 0.76; } };
 
@@ -301,6 +301,13 @@
 
   function drawLogoBanner(L, hFrac) { const bx = L.panelX + 14, by = L.panelY + 12, bw = L.panelW - 28, bh = L.panelH * hFrac; if (logoLoaded) { ctx.save(); roundRect(bx, by, bw, bh, 18); ctx.clip(); const s = Math.max(bw / logoImg.width, bh / logoImg.height); ctx.drawImage(logoImg, bx + (bw - logoImg.width * s) / 2, by + (bh - logoImg.height * s) / 2, logoImg.width * s, logoImg.height * s); ctx.restore(); } else { drawText("COLOR SWITCH BLAST", W / 2, by + bh / 2, fitSize("COLOR SWITCH BLAST", bw, 30, "900"), "#ffffff", "900"); } }
 
+  function drawFooter(L) {
+    const cx = W / 2;
+    const fy = Math.min(H - safeBottom - 12, L.panelY + L.panelH + 18);
+    const t = "VRX GAMES  •  " + GAME_VERSION;
+    drawText(t, cx, fy, fitSize(t, W - 24, 13), "rgba(0,255,156,0.55)", "700");
+  }
+
   function drawHubHome(L) {
     const { panelW, panelH, panelX, panelY } = L, cx = W / 2;
     drawPanel(panelX, panelY, panelW, panelH, 28);
@@ -311,35 +318,88 @@
     const next = { x: panelX + panelW * 0.83, y: card.y + card.h * 0.25, w: panelW * 0.11, h: card.h * 0.5 };
     game.uiRects.hub_prev = prev; game.uiRects.hub_next = next;
     ctx.save(); ctx.shadowBlur = 12; ctx.shadowColor = m.color; ctx.fillStyle = hexToRgba(m.color, 0.16); roundRect(card.x, card.y, card.w, card.h, 14); ctx.fill(); ctx.strokeStyle = hexToRgba(m.color, 0.65); ctx.lineWidth = 2; roundRect(card.x, card.y, card.w, card.h, 14); ctx.stroke(); ctx.restore();
-    drawText(m.name, cx, card.y + card.h * 0.32, Math.min(17, card.h * 0.26), "#ffffff", "800");
-    drawText(m.desc + " • BEST " + getBest(m.id), cx, card.y + card.h * 0.72, Math.min(10, card.h * 0.16), hexToRgba(m.color, 0.95), "600");
+    drawText(m.name, cx, card.y + card.h * 0.32, fitSize(m.name, card.w - 16, 17), "#ffffff", "800");
+    drawText(m.desc + " • BEST " + getBest(m.id), cx, card.y + card.h * 0.72, fitSize(m.desc + " • BEST " + getBest(m.id), card.w - 12, 10), hexToRgba(m.color, 0.95), "600");
     drawRectButton(prev, "◀", "#00ff9c", 0.8); drawRectButton(next, "▶", "#00ff9c", 0.8);
     const play = { x: cx - panelW * 0.30, y: panelY + panelH * 0.48, w: panelW * 0.60, h: panelH * 0.10 };
     game.uiRects.hub_play = play;
     drawRectButton(play, "▶ PLAY", m.color, 0.72 + Math.sin(game.time * 5) * 0.28);
     const nw = panelW * 0.17, nh = panelH * 0.12, ny = panelY + panelH * 0.64, gap = panelW * 0.045, total = nw * 4 + gap * 3, nx0 = cx - total / 2;
-    const navs = [ ["hub_ach", "★", "AWARDS"], ["hub_shop", "▣", "SHOP"], ["hub_set", "⚙", "CONFIG"], ["hub_board", "♛", "RANK"] ];
-    navs.forEach((n, i) => { const r = { x: nx0 + i * (nw + gap), y: ny, w: nw, h: nh }; game.uiRects[n[0]] = r; ctx.save(); ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.strokeStyle = "rgba(0,255,156,0.3)"; ctx.lineWidth = 1.5; roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.stroke(); ctx.restore(); drawText(n[1], r.x + r.w / 2, r.y + r.h * 0.35, Math.min(16, r.h * 0.3), "#00ff9c", "800"); drawText(n[2], r.x + r.w / 2, r.y + r.h * 0.72, Math.min(9, r.h * 0.16), "rgba(255,255,255,0.6)", "600"); });
+    const navs = [["hub_ach", "★", "AWARDS"], ["hub_shop", "▣", "SHOP"], ["hub_set", "⚙", "CONFIG"], ["hub_board", "♛", "RANK"]];
+    navs.forEach((n, i) => { const r = { x: nx0 + i * (nw + gap), y: ny, w: nw, h: nh }; game.uiRects[n[0]] = r; ctx.save(); ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.strokeStyle = "rgba(0,255,156,0.3)"; ctx.lineWidth = 1.5; roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.stroke(); ctx.restore(); drawText(n[1], r.x + r.w / 2, r.y + r.h * 0.35, Math.min(16, r.h * 0.3), "#00ff9c", "800"); drawText(n[2], r.x + r.w / 2, r.y + r.h * 0.72, fitSize(n[2], r.w - 6, 9), "rgba(255,255,255,0.6)", "600"); });
     const unlocked = ACHIEVEMENTS.filter(a => profile.achievements[a.id]).length;
-    drawText("GAMES " + profile.games + " • AWARDS " + unlocked + "/" + ACHIEVEMENTS.length, cx, panelY + panelH * 0.83, Math.min(11, W * 0.028), "rgba(255,255,255,0.5)", "600");
+    const stats = "GAMES " + profile.games + " • AWARDS " + unlocked + "/" + ACHIEVEMENTS.length;
+    drawText(stats, cx, panelY + panelH * 0.84, fitSize(stats, panelW - 24, 11), "rgba(255,255,255,0.5)", "600");
+    if (window.matchMedia && window.matchMedia("(pointer: fine)").matches) {
+      const hint = "1-4 = MODE • SPACE = PLAY";
+      drawText(hint, cx, panelY + panelH * 0.91, fitSize(hint, panelW - 24, 12), "rgba(0,255,156,0.5)", "600");
+    }
     drawFooter(L);
   }
 
-  function drawHubBack(L, title) { const cx = W / 2; drawText(title, cx, L.panelY + L.panelH * 0.08, Math.min(22, L.panelW * 0.05), "#00ff9c", "800"); const b = { x: cx - L.panelW * 0.3, y: L.panelY + L.panelH * 0.88, w: L.panelW * 0.6, h: L.panelH * 0.07 }; game.uiRects.hub_back = b; drawRectButton(b, "◀ BACK", "#94a3b8", 0.8); }
+  function drawHubBack(L, title) { const cx = W / 2; if (title) drawText(title, cx, L.panelY + L.panelH * 0.08, Math.min(22, L.panelW * 0.05), "#00ff9c", "800"); const b = { x: cx - L.panelW * 0.3, y: L.panelY + L.panelH * 0.88, w: L.panelW * 0.6, h: L.panelH * 0.07 }; game.uiRects.hub_back = b; drawRectButton(b, "◀ BACK", "#94a3b8", 0.8); }
 
-  function drawHubAchievements(L) { const { panelW, panelH, panelX, panelY } = L, cx = W / 2; drawPanel(panelX, panelY, panelW, panelH, 28); const unlocked = ACHIEVEMENTS.filter(a => profile.achievements[a.id]).length; drawText("AWARDS " + unlocked + "/" + ACHIEVEMENTS.length, cx, panelY + panelH * 0.07, Math.min(20, panelW * 0.05), "#00ff9c", "800"); const cols = 2, cw = panelW * 0.42, ch = panelH * 0.10, gx = panelW * 0.05; ACHIEVEMENTS.forEach((a, i) => { const col = i % cols, row = Math.floor(i / cols); const r = { x: panelX + panelW * 0.06 + col * (cw + gx), y: panelY + panelH * 0.13 + row * (ch + panelH * 0.015), w: cw, h: ch }; const got = !!profile.achievements[a.id]; ctx.save(); ctx.fillStyle = got ? "rgba(250,204,21,0.12)" : "rgba(255,255,255,0.04)"; ctx.strokeStyle = got ? "rgba(250,204,21,0.6)" : "rgba(255,255,255,0.12)"; ctx.lineWidth = 1.5; roundRect(r.x, r.y, r.w, r.h, 8); ctx.fill(); ctx.stroke(); ctx.restore(); drawText(a.icon, r.x + r.w * 0.12, r.y + r.h / 2, Math.min(14, r.h * 0.4), got ? "#facc15" : "rgba(255,255,255,0.3)", "800"); drawText(a.name, r.x + r.w * 0.55, r.y + r.h / 2, Math.min(9, r.h * 0.26), got ? "#ffffff" : "rgba(255,255,255,0.4)", "700"); }); drawHubBack(L, ""); }
+  function drawHubAchievements(L) {
+    const { panelW, panelH, panelX, panelY } = L, cx = W / 2;
+    drawPanel(panelX, panelY, panelW, panelH, 28);
+    const unlocked = ACHIEVEMENTS.filter(a => profile.achievements[a.id]).length;
+    drawText("★ AWARDS", cx, panelY + panelH * 0.06, fitSize("★ AWARDS", panelW - 24, 20), "#00ff9c", "800");
+    const pb = { x: panelX + panelW * 0.10, y: panelY + panelH * 0.10, w: panelW * 0.80, h: 10 };
+    ctx.save(); ctx.fillStyle = "rgba(255,255,255,0.08)"; roundRect(pb.x, pb.y, pb.w, pb.h, 5); ctx.fill();
+    const frac = ACHIEVEMENTS.length ? unlocked / ACHIEVEMENTS.length : 0;
+    ctx.fillStyle = "#facc15"; roundRect(pb.x, pb.y, Math.max(6, pb.w * frac), pb.h, 5); ctx.fill(); ctx.restore();
+    drawText(unlocked + " / " + ACHIEVEMENTS.length + " UNLOCKED", cx, panelY + panelH * 0.10 + 20, 10, "rgba(255,255,255,0.6)", "600");
+    const tw = panelW * 0.19, th = panelH * 0.10, ty = panelY + panelH * 0.17, tg = panelW * 0.026, tt = tw * 4 + tg * 3, tx0 = cx - tt / 2;
+    MODES.forEach((m, i) => { const r = { x: tx0 + i * (tw + tg), y: ty, w: tw, h: th }; ctx.save(); ctx.fillStyle = hexToRgba(m.color, 0.12); ctx.strokeStyle = hexToRgba(m.color, 0.5); ctx.lineWidth = 1.5; roundRect(r.x, r.y, r.w, r.h, 8); ctx.fill(); ctx.stroke(); ctx.restore(); drawText("♛", r.x + r.w / 2, r.y + r.h * 0.30, Math.min(12, r.h * 0.3), hexToRgba(m.color, 0.95), "800"); drawText(String(getBest(m.id)), r.x + r.w / 2, r.y + r.h * 0.72, fitSize(String(getBest(m.id)), r.w - 6, 11), "#ffffff", "800"); });
+    const PER = 3, pages = Math.ceil(ACHIEVEMENTS.length / PER);
+    if (game.achPage >= pages) game.achPage = 0; if (game.achPage < 0) game.achPage = pages - 1;
+    const start = game.achPage * PER;
+    for (let i = 0; i < PER; i++) { const a = ACHIEVEMENTS[start + i]; if (!a) break;
+      const r = { x: panelX + panelW * 0.08, y: panelY + panelH * 0.315 + i * panelH * 0.155, w: panelW * 0.84, h: panelH * 0.135 };
+      const got = !!profile.achievements[a.id];
+      ctx.save(); ctx.fillStyle = got ? "rgba(250,204,21,0.10)" : "rgba(255,255,255,0.04)"; ctx.strokeStyle = got ? "rgba(250,204,21,0.6)" : "rgba(255,255,255,0.12)"; ctx.lineWidth = 1.5; roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.stroke(); ctx.restore();
+      const ib = { x: r.x + r.h * 0.15, y: r.y + r.h * 0.18, w: r.h * 0.64, h: r.h * 0.64 };
+      ctx.save(); ctx.fillStyle = got ? hexToRgba("#facc15", 0.2) : "rgba(255,255,255,0.06)"; roundRect(ib.x, ib.y, ib.w, ib.h, 8); ctx.fill(); ctx.restore();
+      drawText(a.icon, ib.x + ib.w / 2, ib.y + ib.h / 2, Math.min(16, ib.h * 0.5), got ? "#facc15" : "rgba(255,255,255,0.35)", "800");
+      const tx = r.x + r.h * 0.95, avail = r.w - r.h * 1.1 - r.w * 0.12;
+      drawText(a.name, tx + avail / 2, r.y + r.h * 0.32, fitSize(a.name, avail, 12), got ? "#ffffff" : "rgba(255,255,255,0.5)", "800");
+      drawText(a.desc, tx + avail / 2, r.y + r.h * 0.68, fitSize(a.desc, avail, 9), got ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.35)", "600");
+      drawText(got ? "✔" : "🔒", r.x + r.w - r.w * 0.07, r.y + r.h / 2, Math.min(13, r.h * 0.3), got ? "#4ade80" : "rgba(255,255,255,0.3)", "800");
+    }
+    const pr = { x: panelX + panelW * 0.10, y: panelY + panelH * 0.80, w: panelW * 0.12, h: panelH * 0.06 };
+    const nr = { x: panelX + panelW * 0.78, y: panelY + panelH * 0.80, w: panelW * 0.12, h: panelH * 0.06 };
+    game.uiRects.ach_prev = pr; game.uiRects.ach_next = nr;
+    drawRectButton(pr, "◀", "#94a3b8", 0.8); drawRectButton(nr, "▶", "#94a3b8", 0.8);
+    drawText((game.achPage + 1) + " / " + pages, cx, panelY + panelH * 0.83, 11, "rgba(255,255,255,0.6)", "700");
+    drawHubBack(L, "");
+  }
 
-  function drawHubSettings(L) { const { panelW, panelH, panelX, panelY } = L, cx = W / 2; drawPanel(panelX, panelY, panelW, panelH, 28); SETTINGS_ROWS.forEach((row, i) => { const r = { x: panelX + panelW * 0.10, y: panelY + panelH * 0.14 + i * panelH * 0.14, w: panelW * 0.80, h: panelH * 0.11 }; game.uiRects["set_" + row.id] = r; const on = !!game.settings[row.id]; ctx.save(); ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.strokeStyle = on ? "rgba(0,255,156,0.5)" : "rgba(255,255,255,0.15)"; ctx.lineWidth = 1.5; roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.stroke(); ctx.restore(); drawText(row.label, r.x + r.w * 0.30, r.y + r.h / 2, Math.min(11, r.h * 0.3), "#ffffff", "700"); drawText(on ? "ON" : "OFF", r.x + r.w * 0.82, r.y + r.h / 2, Math.min(12, r.h * 0.34), on ? "#00ff9c" : "rgba(255,255,255,0.4)", "800"); }); drawHubBack(L, "CONFIG"); }
+  function drawHubRank(L) {
+    const { panelW, panelH, panelX, panelY } = L, cx = W / 2;
+    drawPanel(panelX, panelY, panelW, panelH, 28);
+    drawText("♛ RANK", cx, panelY + panelH * 0.07, fitSize("♛ RANK", panelW - 24, 20), "#00ff9c", "800");
+    drawText("LOCAL TROPHIES", cx, panelY + panelH * 0.13, 10, "rgba(255,255,255,0.55)", "600");
+    const sorted = [...MODES].sort((a, b) => getBest(b.id) - getBest(a.id));
+    const medals = ["🥇", "", "", "•"];
+    sorted.forEach((m, i) => { const r = { x: panelX + panelW * 0.10, y: panelY + panelH * 0.19 + i * panelH * 0.15, w: panelW * 0.80, h: panelH * 0.13 };
+      ctx.save(); ctx.fillStyle = hexToRgba(m.color, 0.10); ctx.strokeStyle = hexToRgba(m.color, 0.5); ctx.lineWidth = 1.5; roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.stroke(); ctx.restore();
+      drawText(medals[i], r.x + r.w * 0.08, r.y + r.h / 2, Math.min(16, r.h * 0.4), "#ffffff", "800");
+      drawText(m.name, r.x + r.w * 0.40, r.y + r.h / 2, fitSize(m.name, r.w * 0.4, 12), "#ffffff", "800");
+      drawText("BEST " + getBest(m.id), r.x + r.w * 0.82, r.y + r.h / 2, fitSize("BEST " + getBest(m.id), r.w * 0.3, 11), hexToRgba(m.color, 0.95), "800");
+    });
+    drawText("OVERALL BEST " + profile.best, cx, panelY + panelH * 0.83, fitSize("OVERALL BEST " + profile.best, panelW - 24, 12), "#facc15", "800");
+    drawHubBack(L, "");
+  }
 
-  function drawHubShop(L) { const { panelW, panelH, panelX, panelY } = L, cx = W / 2; drawPanel(panelX, panelY, panelW, panelH, 28); drawText("SHOP — COMING SOON", cx, panelY + panelH * 0.10, Math.min(18, panelW * 0.045), "#00ff9c", "800"); SHOP_ITEMS.forEach((it, i) => { const r = { x: panelX + panelW * 0.10, y: panelY + panelH * 0.18 + i * panelH * 0.18, w: panelW * 0.80, h: panelH * 0.15 }; ctx.save(); ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 1.5; roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.stroke(); ctx.restore(); drawText(it.icon, r.x + r.w * 0.12, r.y + r.h / 2, Math.min(18, r.h * 0.4), "rgba(255,255,255,0.5)", "800"); drawText(it.name, r.x + r.w * 0.42, r.y + r.h / 2, Math.min(12, r.h * 0.26), "#ffffff", "700"); drawText("🔒 SOON", r.x + r.w * 0.82, r.y + r.h / 2, Math.min(10, r.h * 0.22), "rgba(255,255,255,0.45)", "700"); }); drawHubBack(L, ""); }
+  function drawHubSettings(L) { const { panelW, panelH, panelX, panelY } = L, cx = W / 2; drawPanel(panelX, panelY, panelW, panelH, 28); SETTINGS_ROWS.forEach((row, i) => { const r = { x: panelX + panelW * 0.10, y: panelY + panelH * 0.14 + i * panelH * 0.14, w: panelW * 0.80, h: panelH * 0.11 }; game.uiRects["set_" + row.id] = r; const on = !!game.settings[row.id]; ctx.save(); ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.strokeStyle = on ? "rgba(0,255,156,0.5)" : "rgba(255,255,255,0.15)"; ctx.lineWidth = 1.5; roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.stroke(); ctx.restore(); drawText(row.label, r.x + r.w * 0.30, r.y + r.h / 2, fitSize(row.label, r.w * 0.55, 11), "#ffffff", "700"); drawText(on ? "ON" : "OFF", r.x + r.w * 0.82, r.y + r.h / 2, Math.min(12, r.h * 0.34), on ? "#00ff9c" : "rgba(255,255,255,0.4)", "800"); }); drawHubBack(L, "CONFIG"); }
 
-  function drawFooter(L) { const cx = W / 2; const fy = Math.min(H - safeBottom - 14, L.panelY + L.panelH + 20); if (window.matchMedia && window.matchMedia("(pointer: fine)").matches) drawText("1-4 = MODE • SPACE = PLAY", cx, fy - 18, Math.min(12, W * 0.03), "rgba(0,255,156,0.5)", "600"); drawText("VRX GAMES  •  " + GAME_VERSION, cx, fy, Math.min(13, W * 0.032), "rgba(0,255,156,0.55)", "700"); }
+  function drawHubShop(L) { const { panelW, panelH, panelX, panelY } = L, cx = W / 2; drawPanel(panelX, panelY, panelW, panelH, 28); drawText("SHOP — COMING SOON", cx, panelY + panelH * 0.10, fitSize("SHOP — COMING SOON", panelW - 24, 18), "#00ff9c", "800"); SHOP_ITEMS.forEach((it, i) => { const r = { x: panelX + panelW * 0.10, y: panelY + panelH * 0.18 + i * panelH * 0.18, w: panelW * 0.80, h: panelH * 0.15 }; ctx.save(); ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 1.5; roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.stroke(); ctx.restore(); drawText(it.icon, r.x + r.w * 0.12, r.y + r.h / 2, Math.min(18, r.h * 0.4), "rgba(255,255,255,0.5)", "800"); drawText(it.name, r.x + r.w * 0.42, r.y + r.h / 2, fitSize(it.name, r.w * 0.4, 12), "#ffffff", "700"); drawText("🔒 SOON", r.x + r.w * 0.82, r.y + r.h / 2, Math.min(10, r.h * 0.22), "rgba(255,255,255,0.45)", "700"); }); drawHubBack(L, ""); }
 
-  function drawMenu() { const L = getPanelLayout(Math.min(600, H * 0.86), 440); if (game.hub === "achievements") drawHubAchievements(L); else if (game.hub === "settings") drawHubSettings(L); else if (game.hub === "shop") drawHubShop(L); else drawHubHome(L); }
+  function drawMenu() { const L = getPanelLayout(Math.min(600, H * 0.86), 440); if (game.hub === "achievements") drawHubAchievements(L); else if (game.hub === "settings") drawHubSettings(L); else if (game.hub === "shop") drawHubShop(L); else if (game.hub === "rank") drawHubRank(L); else drawHubHome(L); }
 
   function drawRevive() { ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(0, 0, W, H); const L = getPanelLayout(Math.min(280, H * 0.42), 380); const { panelW, panelH, panelX, panelY } = L, cx = W / 2; drawPanel(panelX, panelY, panelW, panelH, 26); drawText("CONTINUE?", cx, panelY + panelH * 0.16, Math.min(38, W * 0.08), "#ffffff", "900"); drawText("Score: " + game.score, cx, panelY + panelH * 0.32, Math.min(22, W * 0.05), "rgba(255,255,255,0.85)", "800"); const useAd = !!((window.PlaygamaBridge && window.PlaygamaBridge.adsAvailable) || (window.GamePixBridge && window.GamePixBridge.adsAvailable)); const bw = panelW * 0.72; const ad = { x: cx - bw / 2, y: panelY + panelH * 0.46, w: bw, h: 46 }; const no = { x: cx - bw / 2, y: panelY + panelH * 0.46 + 56, w: bw, h: 34 }; game.uiRects.reviveAd = ad; game.uiRects.reviveNo = no; drawRectButton(ad, useAd ? "REVIVE — WATCH AD" : "FREE REVIVE", "#4ade80", 0.75 + Math.sin(performance.now() / 250) * 0.25); drawRectButton(no, "NO THANKS", "#94a3b8", 0.7); }
 
-  function drawGameOver() { const L = getPanelLayout(Math.min(480, H * 0.72), 420); const { panelW, panelH, panelX, panelY } = L, cx = W / 2; drawPanel(panelX, panelY, panelW, panelH, 28); const ts = Math.min(44, W * 0.095, panelW * 0.12), tx = Math.min(24, W * 0.05, panelW * 0.055); drawText("GAME OVER", cx, panelY + panelH * 0.10, ts, "#ffffff", "900"); drawText(game.mode.toUpperCase(), cx, panelY + panelH * 0.18, tx * 0.6, "rgba(0,255,156,0.7)", "700"); if (game.newBest) drawText("NEW BEST!", cx, panelY + panelH * 0.25, tx * 0.8, "#facc15", "900"); drawText("Score: " + game.score, cx, panelY + panelH * 0.33, tx, "rgba(255,255,255,0.92)", "800"); drawText("Perfects: " + game.runPerfects + "  •  Combo: " + game.maxCombo, cx, panelY + panelH * 0.41, tx * 0.7, "rgba(255,255,255,0.75)", "700"); drawText("Best: " + game.best, cx, panelY + panelH * 0.48, tx * 0.8, "rgba(255,255,255,0.75)", "700"); const bw = panelW * 0.72; const restart = { x: cx - bw / 2, y: panelY + panelH * 0.56, w: bw, h: 42 }; const home = { x: cx - bw / 2, y: panelY + panelH * 0.56 + 48, w: bw, h: 34 }; const share = { x: cx - bw / 2, y: panelY + panelH * 0.56 + 86, w: bw, h: 34 }; game.uiRects.restartOver = restart; game.uiRects.homeOver = home; game.uiRects.shareOver = share; drawRectButton(restart, "↻ RESTART", "#22d3ee", 0.72 + Math.sin(performance.now() / 300) * 0.28); drawRectButton(home, "⌂ HOME", "#00ff9c", 0.8); drawRectButton(share, "SHARE SCORE", "#4ade80", 0.7); }
+  function drawGameOver() { const L = getPanelLayout(Math.min(480, H * 0.72), 420); const { panelW, panelH, panelX, panelY } = L, cx = W / 2; drawPanel(panelX, panelY, panelW, panelH, 28); const ts = Math.min(44, W * 0.095, panelW * 0.12), tx = Math.min(24, W * 0.05, panelW * 0.055); drawText("GAME OVER", cx, panelY + panelH * 0.10, ts, "#ffffff", "900"); drawText(game.mode.toUpperCase(), cx, panelY + panelH * 0.18, tx * 0.6, "rgba(0,255,156,0.7)", "700"); if (game.newBest) drawText("NEW BEST!", cx, panelY + panelH * 0.25, tx * 0.8, "#facc15", "900"); drawText("Score: " + game.score, cx, panelY + panelH * 0.33, tx, "rgba(255,255,255,0.92)", "800"); const sub = "Perfects: " + game.runPerfects + "  •  Combo: " + game.maxCombo; drawText(sub, cx, panelY + panelH * 0.41, fitSize(sub, panelW - 24, tx * 0.7), "rgba(255,255,255,0.75)", "700"); drawText("Best: " + game.best, cx, panelY + panelH * 0.48, tx * 0.8, "rgba(255,255,255,0.75)", "700"); const bw = panelW * 0.72; const restart = { x: cx - bw / 2, y: panelY + panelH * 0.56, w: bw, h: 42 }; const home = { x: cx - bw / 2, y: panelY + panelH * 0.56 + 48, w: bw, h: 34 }; const share = { x: cx - bw / 2, y: panelY + panelH * 0.56 + 86, w: bw, h: 34 }; game.uiRects.restartOver = restart; game.uiRects.homeOver = home; game.uiRects.shareOver = share; drawRectButton(restart, "↻ RESTART", "#22d3ee", 0.72 + Math.sin(performance.now() / 300) * 0.28); drawRectButton(home, "⌂ HOME", "#00ff9c", 0.8); drawRectButton(share, "SHARE SCORE", "#4ade80", 0.7); }
 
   function drawPaused() { ctx.fillStyle = "rgba(0,0,0,0.45)"; ctx.fillRect(0, 0, W, H); const L = getPanelLayout(Math.min(280, H * 0.42), 360); const { panelW, panelH, panelX, panelY } = L; drawPanel(panelX, panelY, panelW, panelH, 26); drawText("PAUSED", W / 2, panelY + panelH * 0.20, Math.min(46, W * 0.09), "#ffffff", "900"); drawText("Tap to resume", W / 2, panelY + panelH * 0.42, Math.min(22, W * 0.045), "rgba(255,255,255,0.8)", "700"); const q = { x: W / 2 - panelW * 0.3, y: panelY + panelH * 0.62, w: panelW * 0.6, h: 34 }; game.uiRects.homePause = q; drawRectButton(q, "⌂ QUIT TO HOME", "#f87171", 0.8); if (game.mode === "zen") { const e = { x: W / 2 - panelW * 0.3, y: panelY + panelH * 0.80, w: panelW * 0.6, h: 32 }; game.uiRects.endRun = e; drawRectButton(e, "END RUN", "#f87171", 0.8); } else game.uiRects.endRun = null; }
 
@@ -364,8 +424,10 @@
         if (inRect(x, y, u.hub_ach)) { game.hub = "achievements"; playClick(); return; }
         if (inRect(x, y, u.hub_shop)) { game.hub = "shop"; playClick(); return; }
         if (inRect(x, y, u.hub_set)) { game.hub = "settings"; playClick(); return; }
-        if (inRect(x, y, u.hub_board)) { if (window.PlaygamaBridge) window.PlaygamaBridge.showLeaderboard(); return; }
+        if (inRect(x, y, u.hub_board)) { if (window.PlaygamaBridge && window.PlaygamaBridge.hasLeaderboard) window.PlaygamaBridge.showLeaderboard(); else { game.hub = "rank"; playClick(); } return; }
       } else {
+        if (inRect(x, y, u.ach_prev)) { game.achPage--; playClick(); return; }
+        if (inRect(x, y, u.ach_next)) { game.achPage++; playClick(); return; }
         if (inRect(x, y, u.hub_back)) { game.hub = "home"; playClick(); return; }
         if (game.hub === "settings") for (const row of SETTINGS_ROWS) if (inRect(x, y, u["set_" + row.id])) { toggleSetting(row.id); return; }
       }
